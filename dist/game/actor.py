@@ -1,0 +1,704 @@
+"""
+Assignment 1: Meepo is You
+
+=== CSC148 Winter 2021 ===
+Department of Mathematical and Computational Sciences,
+University of Toronto Mississauga
+
+=== Module Description ===
+This module contains the Actor class and all its subclasses that represent
+different types of elements in the game.
+"""
+
+import pygame
+from typing import Tuple, Optional
+from settings import *
+
+
+class Actor:
+    """
+    A class that represents all the actors in the game. This class includes any
+    attributes/methods that are common between the actors
+
+    === Public Attributes ===
+    x:
+        x coordinate of this actor's location on the stage
+    y:
+        y coordinate of this actor's location on the stage
+    image:
+        the image of the actor
+
+    === Private Attributes ===
+    _is_stop:
+        Flag to keep track of whether this object cannot be moved through
+    _is_push:
+        Flag to keep track of whether this object is pushable
+
+    Representation Invariant: x,y must be greater or equal to 0
+    """
+    x: int
+    y: int
+    _is_stop: bool
+    _is_push: bool
+    image: pygame.Surface
+
+    def __init__(self, x: int, y: int) -> None:
+        self.x, self.y = x, y
+        self._is_stop = False
+        self._is_push = False
+        self.image = pygame.Surface((TILESIZE, TILESIZE))
+
+    def is_stop(self) -> bool:
+        """
+        Getter for _is_stop
+        """
+        return self._is_stop
+
+    def is_push(self) -> bool:
+        """
+        Getter for _is_push
+        """
+        return self._is_push
+
+    def copy(self) -> 'Actor':
+        """
+        Creates an identical copy of self and returns the new copy
+        To be implemented in the subclasses
+        """
+        raise NotImplementedError
+
+    def move(self, game_: 'Game', dx: int, dy: int) -> bool:
+        """
+        Function to move an Actor on the screen, to the direction
+        indicated by dx and dy
+
+        game_: the Game object
+        dx: the offset in the x coordinate
+        dy: the offset in the y coordinate
+
+        Returns whether <self> actually moves.
+
+        Note: this method is different from the "player_move" method in the
+        Character class. A "player_move" is trigger by key pressed directly.
+        This more general "move" can be a move caused by a push. In fact, this
+        "move" method is used in the implementation of "player_move".
+
+        Things to think about in this method:
+        - The object cannot go off the screen boundaries (DONE)
+        - The move may push other objects to move as well.
+        - The move might not happen because it's blocked by an unmovable object,
+          in which case this method should return False
+        - Recall how push works: you may push and move a line of multiple
+          objects as long as the move is not blocked by something.
+        """
+        # TODO Task 2: Complete this method
+        # current_actor = game_.get_actor(self.x, self.y)
+        current_actor = game_.player
+        next_actor = game_.get_actor(self.x + dx, self.y + dy)
+        if not (0 <= self.x + dx <= game_.width and
+                0 <= self.y + dy <= game_.width):
+            return False
+
+        if not game_.get_actor(self.x + dx, self.y + dy):
+
+            current_actor.x = self.x + dx
+            current_actor.y = self.y + dy
+            return True
+
+        """
+        Idea:
+        While the next block is pushable, check if the next next block is pushable
+        1. next block is pushable 
+            - if pushing it by one more is out of bounds -> return False
+            - if the next next block is None -> change both blocks coordinates 
+            - if the next next block is Actor
+                - if next next block is_stop = True -> return False
+                - if next next block is_stop = False -> check if next block is pushable 
+        
+        """
+        i = 1
+        while game_.get_actor(self.x + dx * i, self.y + dy * i).is_push():
+
+            # Cant move if out of bounds
+            if not (0 <= self.x + dx + dx * (i + 1) <= game_.width):
+                return False
+
+            if not (0 <= self.y + dy + dy * (i + 1) <= game_.height):
+                return False
+
+            if not game_.get_actor(self.x + dx * (i + 1), self.y + dy * (i + 1)):
+                while i >= 0:
+                    game_.get_actor(self.x + dx * i, self.y).x = self.x + dx * (i + 1)
+                    game_.get_actor(self.x, self.y + dy * i).y = self.y + dy * (i + 1)
+                    i -= 1
+
+                return True
+
+            if game_.get_actor(self.x + dx * (i + 1),
+                               self.y + dy * (i + 1)).is_stop() and \
+                    not game_.get_actor(self.x + dx * (i + 1),
+                                        self.y + dy * (i + 1)).is_push():
+                return False
+            i += 1
+
+        # Cant move if the next block, in x/y direction, cannot be moved through
+        if next_actor.is_stop() and not next_actor.is_push():
+            return False
+
+        current_actor.x = self.x + dx
+        current_actor.y = self.y + dy
+
+        return True
+        # if i = 2, then,
+        #    actor(x, y)           -> actor(x + dx, y + dy)
+        #    actor(x + dx, y + dy) -> actor(x + 2dx, y + 2dy)
+
+        # if i = 3, then,
+        #    actor(x, y)           -> actor(x + dx, y + dy)
+        #    actor(x + dx, y + dy) -> actor(x + 2dx, y + 2dy)
+        #    actor(x + 2dx, y + 2dy) -> actor(x + 3dx, y + 3dy)
+
+        # if i = n, then,
+        #    actor(x, y)           -> actor(x + dx, y + dy)
+        #    ...
+        #    actor(x + (n-1)dx, y + (n-1)dy) -> actor(x + ndx, y + ndy)
+
+
+
+
+"""
+As part of the implementation of the move method. 
+Check and use the is_stop and is_push flags 
+correctly so that the pushable objects are actually pushable, 
+and the move is properly stopped when it should not happen.
+"""
+
+
+class Character(Actor):
+    """
+    A class that represents non-Blocks/Bushes on the screen
+    i.e., Meepo, Wall, Rock, Flag
+
+    A Character could potentially be the player that is controlled by the
+    key presses
+
+    === Additional Private Attributes ===
+    _is_player:
+        Whether the character is the player, i.e., "<Character> isYou"
+    _is_lose:
+        Whether the rules contains "<Character> isLose"
+    _is_win:
+        Whether the rules contains "<Character> isWin"
+    """
+    _is_player: bool
+    _is_lose: bool
+    _is_win: bool
+
+    def __init__(self, x: int, y: int) -> None:
+        """
+        Initializes the Character
+        """
+        super().__init__(x, y)
+        self._is_player = False
+        self._is_lose = False
+        self._is_win = False
+
+    def is_win(self) -> bool:
+        """
+        Getter for _is_win
+        """
+        return self._is_win
+
+    def is_lose(self) -> bool:
+        """
+        Getter for _is_lose
+        """
+        return self._is_lose
+
+    def is_player(self) -> bool:
+        """
+        Getter for _is_player
+        """
+        return self._is_player
+
+    def set_player(self) -> None:
+        """
+        Sets flag to make this actor the player.
+        """
+        self._is_player = True
+        self._is_stop = False
+        self._is_push = False
+
+    def unset_player(self) -> None:
+        """
+        Unsets the flag to make the actor not the player.
+        """
+        self._is_player = False
+
+    def set_stop(self) -> None:
+        """
+        Sets flag to make actor incapable of being moved through or pushed.
+        """
+        self._is_stop = True
+        # self._is_push = False
+        self._is_player = False
+
+    def unset_stop(self) -> None:
+        """
+        Unsets the flag that prevents actor from being moved through or pushed.
+        """
+        self._is_stop = False
+
+    def set_push(self) -> None:
+        """
+        Sets the flag that allows the actor to be pushable
+        """
+        self._is_push = True
+        # self._is_stop = False
+        self._is_player = False
+
+    def unset_push(self) -> None:
+        """
+        Unsets the flag that allows the actor to be pushable
+        """
+        self._is_push = False
+
+    def set_win(self) -> None:
+        """
+        Sets this actor to be the win Condition.
+        """
+        self._is_win = True
+        self._is_lose = False
+
+    def unset_win(self) -> None:
+        """
+        Unsets this actor from being the win Condition.
+        """
+        self._is_win = False
+
+    def set_lose(self) -> None:
+        """
+        Sets this flag to be the lose condition.
+        """
+        self._is_lose = True
+        self._is_win = False
+
+    def unset_lose(self) -> None:
+        """
+        Unsets this flag from being the lose condition.
+        """
+        self._is_lose = False
+
+    def copy_flags(self, other: "Character") -> None:
+        """
+        Copy the boolean flags to the <other> object
+        This is a helper method that should be used by the copy methods
+        implemented in the subclasses.
+        """
+        other._is_player = self._is_player
+        other._is_push = self._is_push
+        other._is_stop = self._is_stop
+        other._is_lose = self._is_lose
+        other._is_win = self._is_win
+
+    def copy(self) -> 'Character':
+        """
+        Returns a copy of this object itself.
+        Need to be implemented in the subclasses
+        """
+        raise NotImplementedError
+
+    def handle_key_press(self, game_: 'Game') -> Tuple[int, int]:
+        """
+        Process the key press input and
+        return (dx, dy), the offsets on the x and y directions.
+        """
+        key_pressed = game_.keys_pressed
+        dx, dy = 0, 0
+        if key_pressed[pygame.K_LEFT]:
+            dx -= 1
+        elif key_pressed[pygame.K_RIGHT]:
+            dx += 1
+        elif key_pressed[pygame.K_UP]:
+            dy -= 1
+        elif key_pressed[pygame.K_DOWN]:
+            dy += 1
+        return dx, dy
+
+    def player_move(self, game_: 'Game') -> bool:
+        """
+        Detects input from the keyboard and moves the Player on the game stage
+        based on directional key presses.
+
+        Also, after the move, check if we have won or lost the game,
+        and call the win() and lose() methods in Game accordingly
+        """
+        dx, dy = self.handle_key_press(game_)
+        if dx == 0 and dy == 0:
+            return False
+        return self.move(game_, dx, dy)
+
+
+class Meepo(Character):
+    """
+    Class representing Ms. Meepo in the game.
+
+    Meepo is a special Character because we want to change her image as
+    she moves in different directions. We also want to see the movement of
+    her "arms" as she moves.
+
+    === Additional Public Attributes ===
+    walk_right:
+        Image for walking right
+    walk_left:
+        Image for walking left
+    walk_up:
+        Image for walking up
+    walk_down:
+        Image for walking down
+    """
+    walk_left: list
+    walk_right: list
+    walk_down: list
+    walk_up: list
+
+    def __init__(self, x: int, y: int) -> None:
+        """
+        Initializes the Meepo Class
+        Load the images for displaying Ms. Meepo's movement.
+        """
+        super().__init__(x, y)
+
+        # Add motion images
+        self.walk_right = [load_image(PLAYER_SPRITE_R1),
+                           load_image(PLAYER_SPRITE_R2)]
+        self.walk_left = [
+            pygame.transform.flip(load_image(PLAYER_SPRITE_R1), True, False),
+            pygame.transform.flip(load_image(PLAYER_SPRITE_R2), True, False)
+        ]
+        self.walk_up = [load_image(PLAYER_SPRITE_U1),
+                        load_image(PLAYER_SPRITE_U2)]
+        self.walk_down = [load_image(PLAYER_SPRITE_B1),
+                          load_image(PLAYER_SPRITE_B2)]
+        self.image = self.walk_down[1]
+
+    # TODO Task 1: Add any missing method that's necessary here.
+    # You may also leave this for now and revisit it when you work on Task 4
+
+    def handle_key_press(self, game_: 'Game') -> Tuple[int, int]:
+        """
+        Overriding the same method in the base class, adding the modification
+        of the image depending on the direction of the move.
+        """
+        # TODO Task 2: Override this method for Meepo
+        # We want to update the image of Meepo as she moves in different
+        # directions. Check the __init__ method to see the images that are
+        # available for use.
+        # Watch the video demo carefully too see how Meepo moves. Note the
+        # movement of her "arms" and "tail".
+
+        dx, dy = super().handle_key_press(game_)
+        if dx == -1:
+            if self.image == self.walk_left[0]:
+                self.image = self.walk_left[1]
+            else:
+                self.image = self.walk_left[0]
+        elif dx == 1:
+            if self.image == self.walk_right[1]:
+                self.image = self.walk_right[0]
+            else:
+                self.image = self.walk_right[1]
+        elif dy == -1:
+            if self.image == self.walk_up[0]:
+                self.image = self.walk_up[1]
+            else:
+                self.image = self.walk_up[0]
+        elif dy == 1:
+            if self.image == self.walk_down[1]:
+                self.image = self.walk_down[0]
+            else:
+                self.image = self.walk_down[1]
+        return dx, dy
+
+    def copy(self) -> 'Meepo':
+        """
+        Returns a copy of Meepo with the coordinates
+        """
+        meepo_copy = Meepo(self.x, self.y)
+        meepo_copy.image = self.image
+        self.copy_flags(meepo_copy)
+        return meepo_copy
+
+
+# TODO Task 1: add the Wall, Rock, and Flag classes
+# Keep the amount of code your write to a minimal for each class (it is
+# supposed to be quite short), i.e., inherit and use existing classes/methods
+# when appropriate, write ONLY what's special about the new class.
+#
+# Hint: use the load_image() function to load the image of the character
+#
+# class Wall(...):
+#
+# class Rock(...):
+#
+# class Flag(...):
+#
+
+
+class Wall(Character):
+    """
+        Class representing a Wall in the game.
+    """
+
+    def __init__(self, x: int, y: int):
+        """
+        Initializes a Wall object
+        """
+        super().__init__(x, y)
+        self.image = load_image(WALL_SPRITE)
+
+    def copy(self) -> 'Wall':
+        """
+        Returns a copy of Wall with the coordinates
+        """
+        wall_copy = Wall(self.x, self.y)
+        # self.copy_flags(wall_copy)
+        return wall_copy
+
+
+class Rock(Character):
+    """
+      Class representing a Rock in the game.
+    """
+
+    def __init__(self, x: int, y: int):
+        """
+        Initializes a Rock object
+        """
+        super().__init__(x, y)
+        self.image = load_image(ROCK_SPRITE)
+
+    def copy(self) -> 'Rock':
+        """
+        Returns a copy of Rock with the coordinates
+        """
+        rock_copy = Rock(self.x, self.y)
+        self.copy_flags(rock_copy)
+        return rock_copy
+
+
+class Flag(Character):
+    """
+       Class representing a Flag in the game.
+     """
+
+    def __init__(self, x: int, y: int) -> None:
+        """
+        Initializes a Flag object
+        """
+        super().__init__(x, y)
+        self.image = load_image(FLAG_SPRITE)
+
+    def copy(self) -> 'Flag':
+        """
+        Returns a copy of Flag with the coordinates
+        """
+        flag_copy = Flag(self.x, self.y)
+        self.copy_flags(flag_copy)
+        return flag_copy
+
+
+class Bush(Actor):
+    """
+    Class representing the edges and unmovable objects in the game.
+    """
+
+    def __init__(self, x: int, y: int) -> None:
+        super().__init__(x, y)
+        self.image = load_image(BUSH_SPRITE)
+
+        # Bush is always unmovable and cannot be moved through
+        self._is_stop = True
+        self._is_push = False
+
+    def copy(self) -> 'Bush':
+        """
+        Returns a copy of the Bush object
+        """
+        return Bush(self.x, self.y)
+
+
+class Block(Actor):
+    """
+    Class for words in the game such as
+    "Meepo", "you", "is", "rock", "lose", "victor", "flag", "push", and "stop".
+
+    Blocks are used for indicating rules in the game.
+
+    ================
+    Additional public attribute:
+    word: the word on this block
+    """
+    word: str
+
+    def __init__(self, x: int, y: int, word_: str) -> None:
+        super().__init__(x, y)
+        self.word = word_
+        # Blocks are always pushable and cannot be moved through.
+        self._is_push = True
+        self._is_stop = True
+
+    def copy(self) -> 'Block':
+        """
+        Creates an identical copy of self and returns the new copy.
+        To be implemented in the subclasses
+        """
+        raise NotImplementedError
+
+
+# TODO Task 1: Implement the Subject and Attribute classes
+# Keep the amount of code your write to a minimal for each class (it is
+# supposed to be quite short), i.e., inherit and use existing classes/methods
+# when appropriate, write ONLY what's special about the new class.
+#
+# Hint: use the load_image() function to load the image of the character
+#
+class Subject(Block):
+    """
+    Class representing the Subject blocks in the game, e.g.,
+    "Meepo", "Wall", "Flag", "Rock" (see SUBJECTS in settings.py)
+    """
+
+    # TODO Task 1: Add the initializer and any other necessary method
+    def __init__(self, x: int, y: int, word_: str) -> None:
+        super().__init__(x, y, word_)
+
+        if word_ == "Meepo":
+            self.image = load_image("./sprites/meepo.png")
+        if word_ == "Wall":
+            self.image = load_image("./sprites/wall.png")
+        if word_ == "Flag":
+            self.image = load_image("./sprites/flag.png")
+        if word_ == "Rock":
+            self.image = load_image("./sprites/rock.png")
+
+    def copy(self):
+        """
+        Returns a copy of the Subject block called
+        """
+        return Subject(self.x, self.y, self.word)
+
+
+class Attribute(Block):
+    """
+    Class representing the Attribute blocks in the game, e.g.,
+    "Push", "Stop", "Victory", "Lose", "You"
+    """
+
+    # TODO Task 1: Add the initializer and any other necessary method
+    # TODO: check pathing of load_image(xxxxxx)
+    def __init__(self, x: int, y: int, word_: str) -> None:
+        super().__init__(x, y, word_)
+        if word_ == "Push":
+            self.image = load_image("./sprites/push.png")
+        if word_ == "Stop":
+            self.image = load_image("./sprites/stop.png")
+        if word_ == "Victory":
+            self.image = load_image("./sprites/victory.png")
+        if word_ == "Lose":
+            self.image = load_image("./sprites/lose.png")
+        if word_ == "You":
+            self.image = load_image("./sprites/you.png")
+
+    def copy(self):
+        """
+        Returns a copy of the Attribute block called
+        """
+        return Attribute(self.x, self.y, self.word)
+
+
+class Is(Block):
+    """
+    Class representing the Is blocks in the game.
+    """
+
+    def __init__(self, x: int, y: int) -> None:
+        super().__init__(x, y, " is")  # Note the space in " is"
+        self.image = load_image(IS_PURPLE)
+
+    # TODO Task 1: Add any missing methods that is necessary
+    # You may also leave this for now and revisit it when you work on Task 4
+
+    # missing method
+
+    def update(self, up: Optional[Actor],
+               down: Optional[Actor],
+               left: Optional[Actor],
+               right: Optional[Actor]) -> Tuple[str, str]:
+        """
+        Detect horizontally and vertically if a new rule has been created in
+        the format of a string "Subject isAttribute".
+
+        up, down, left, right: the Actors that are adjacent (in the four
+        directions) to this IS block
+
+        Return a tuple of (horizontal, vertical) rules if a rule is detected
+        in either direction, otherwise put an empty string at the tuple index.
+
+        Some example return values:
+        - ("Wall isPush", "Flag isWin)"
+        - ("", "Rock isYou")
+        - ("", "")
+
+        Also, use IS images with different colours:
+        - if no rule is detected on this IS block, use IS_PURPLE
+        - if one rule is detected on this IS block, use IS_LIGHT_BLUE
+        - if two rules are detected on this IS block, use IS_DARK_BLUE
+
+        Note: We always read the rule left-to-right or up-to-down, e.g.,
+        if it reads "Push is Wall" from left to right, or from bottom to top,
+        it is NOT a valid rule.
+
+        Hint: you may use the built-in method isinstance() to check the class
+        type of an object.
+        """
+        # TODO Task 3: Complete this method.
+        is_up_down = ""
+        is_left_right = ""
+        if isinstance(up, Subject) and isinstance(down, Attribute):
+            is_up_down = up.word + self.word + down.word
+
+        if isinstance(left, Subject) and isinstance(right, Attribute):
+            is_left_right = left.word + self.word + right.word
+
+        if is_up_down == "" or is_left_right == "":
+            self.image = load_image(IS_LIGHT_BLUE)
+        if is_up_down != "" and is_left_right != "":
+            self.image = load_image(IS_DARK_BLUE)
+        if is_up_down == "" and is_left_right == "":
+            self.image = load_image(IS_PURPLE)
+
+        return is_up_down, is_left_right
+
+    def copy(self):
+        is_copy = Is(self.x, self.y)
+        is_copy.image = self.image
+        return is_copy
+
+
+def load_image(img_name: str, width: int = TILESIZE,
+               height: int = TILESIZE) -> pygame.image:
+    """
+    Return a pygame img of the PNG img_name that has been scaled according
+    to the given width and size
+    """
+    img = pygame.image.load(img_name).convert_alpha()
+    return pygame.transform.scale(img, (width, height))
+
+
+if __name__ == "__main__":
+    import python_ta
+
+    python_ta.check_all(config={
+        'extra-imports': ['settings', 'stack', 'actor', 'pygame']
+    })
